@@ -1,9 +1,9 @@
 {
   "name": "@nevulo/nevi-renderer",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "MIT",
-  "exports": "./src/index.ts",
+  "exports": "./dist/src/index.js",
   "publish": {
-    "include": ["src/**/*.ts", "src/**/*.tsx", "fonts/**/*.ttf", "LICENSE", "README.md"]
+    "include": ["dist/src/**/*.js", "dist/src/**/*.d.ts", "fonts/**/*.ttf", "LICENSE", "README.md"]
   }
 }
