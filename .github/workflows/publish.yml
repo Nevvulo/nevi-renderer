@@ -15,4 +15,4 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       - name: Publish package
-        run: npx jsr publish --allow-slow-types
+        run: npx jsr publish --allow-slow-types --allow-dirty
