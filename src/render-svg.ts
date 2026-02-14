@@ -5,7 +5,7 @@ import type { ProfileData } from "./types";
 
 const emojiCache = new Map<string, string>();
 
-async function loadEmoji(segment: string): Promise<string> {
+export async function loadEmoji(segment: string): Promise<string> {
   // Build the Twemoji code point string (e.g. "1f4b0" or "2328-fe0f")
   const codePoint = [...segment]
     .map((c) => c.codePointAt(0)!.toString(16))

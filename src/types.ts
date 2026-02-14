@@ -27,3 +27,35 @@ export interface ProfileData {
   equippedBadges: BadgeDisplay[];
   balance?: number;
 }
+
+// Farm types
+export type SlotState = "empty" | "growing" | "ready";
+
+export interface SlotData {
+  slotNumber: number;
+  state: SlotState;
+  cropEmoji?: string;
+  cropName?: string;
+  percentComplete: number; // 0-100
+}
+
+export interface PlotData {
+  plotNumber: number;
+  slots: SlotData[];
+  totalSlots: number; // 0-36
+  sprinklerPositions?: number[];
+}
+
+export interface FarmData {
+  plot: PlotData;
+  username: string;
+  totalPlots: number;
+  // Legacy compat
+  slots?: SlotData[];
+  totalSlots?: number;
+}
+
+export interface BirdsEyeData {
+  plots: PlotData[];
+  username: string;
+}

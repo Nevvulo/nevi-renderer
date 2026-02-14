@@ -1,6 +1,6 @@
 {
   "name": "@nevulo/nevi-renderer",
-  "version": "0.1.2",
+  "version": "0.3.0",
   "license": "MIT",
   "type": "module",
   "main": "dist/src/index.js",
