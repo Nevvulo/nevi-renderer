@@ -35,6 +35,7 @@ export interface SlotData {
   slotNumber: number;
   state: SlotState;
   cropEmoji?: string;
+  cropImage?: string; // Image URL or data URI — rendered instead of emoji when provided
   cropName?: string;
   percentComplete: number; // 0-100
 }

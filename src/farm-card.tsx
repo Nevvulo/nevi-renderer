@@ -108,8 +108,15 @@ function FarmSlot({
         />
       )}
 
-      {/* Crop emoji (if any) */}
-      {slot.cropEmoji && (
+      {/* Crop image (custom) or emoji (unicode) */}
+      {slot.cropImage ? (
+        <img
+          src={slot.cropImage}
+          width={emojiSize}
+          height={emojiSize}
+          style={{ position: "relative" }}
+        />
+      ) : slot.cropEmoji ? (
         <span
           style={{
             fontSize: emojiSize,
@@ -119,7 +126,7 @@ function FarmSlot({
         >
           {slot.cropEmoji}
         </span>
-      )}
+      ) : null}
 
       {/* Slot number for empty slots */}
       {slot.state === "empty" && (
