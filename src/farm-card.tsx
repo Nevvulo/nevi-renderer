@@ -2,40 +2,58 @@
 import type { FarmData, SlotData, BirdsEyeData, PlotData } from "./types";
 
 /**
- * Calculate grid layout based on slot count
+ * Quadrant fill order: the order in which 2x2 quadrants are filled within a 3x3 quadrant grid.
+ * Pattern: fill first 2x2 block of quadrants (4x4), extend right (6x4), extend down (6x6).
+ *
+ *   Q0  Q1  Q4
+ *   Q2  Q3  Q5
+ *   Q6  Q7  Q8
+ */
+const QUADRANT_FILL_ORDER: ReadonlyArray<[number, number]> = [
+  [0, 0], // Q0: slots 1-4
+  [0, 1], // Q1: slots 5-8
+  [1, 0], // Q2: slots 9-12
+  [1, 1], // Q3: slots 13-16
+  [0, 2], // Q4: slots 17-20
+  [1, 2], // Q5: slots 21-24
+  [2, 0], // Q6: slots 25-28
+  [2, 1], // Q7: slots 29-32
+  [2, 2], // Q8: slots 33-36
+];
+
+/**
+ * Map a slot number (1-based) to its grid position using quadrant fill order.
+ * Within each 2x2 quadrant, slots fill left-to-right, top-to-bottom.
+ */
+function slotToGridPosition(slotNumber: number): { row: number; col: number } {
+  const quadrantIndex = Math.floor((slotNumber - 1) / 4);
+  const posInQuadrant = (slotNumber - 1) % 4;
+  const [qRow, qCol] = QUADRANT_FILL_ORDER[quadrantIndex] ?? [0, 0];
+  const localRow = Math.floor(posInQuadrant / 2);
+  const localCol = posInQuadrant % 2;
+  return {
+    row: qRow * 2 + localRow,
+    col: qCol * 2 + localCol,
+  };
+}
+
+/**
+ * Calculate grid layout based on slot count using quadrant-based growth.
  * Returns { columns, rows, tileSize }
  */
 function getGridLayout(totalSlots: number): { columns: number; rows: number; tileSize: number } {
-  // Predefined layouts for specific slot counts
-  const layouts: Record<number, { columns: number; rows: number }> = {
-    6: { columns: 3, rows: 2 },
-    9: { columns: 3, rows: 3 },
-    12: { columns: 4, rows: 3 },
-    13: { columns: 4, rows: 4 },
-    16: { columns: 4, rows: 4 },
-    20: { columns: 5, rows: 4 },
-    25: { columns: 5, rows: 5 },
-    30: { columns: 6, rows: 5 },
-    32: { columns: 8, rows: 4 },
-    36: { columns: 6, rows: 6 },
-  };
-
-  // Find the closest layout that can fit all slots
-  let layout = layouts[totalSlots];
-  if (!layout) {
-    // Find the smallest layout that fits
-    const sortedCounts = Object.keys(layouts)
-      .map(Number)
-      .sort((a, b) => a - b);
-    for (const count of sortedCounts) {
-      if (count >= totalSlots) {
-        layout = layouts[count];
-        break;
-      }
+  let maxQRow = 0;
+  let maxQCol = 0;
+  if (totalSlots > 0) {
+    const quadrantsNeeded = Math.ceil(totalSlots / 4);
+    for (let i = 0; i < Math.min(quadrantsNeeded, QUADRANT_FILL_ORDER.length); i++) {
+      const [qRow, qCol] = QUADRANT_FILL_ORDER[i]!;
+      if (qRow > maxQRow) maxQRow = qRow;
+      if (qCol > maxQCol) maxQCol = qCol;
     }
-    // Fall back to largest if still not found
-    if (!layout) layout = layouts[36];
   }
+  const columns = (maxQCol + 1) * 2;
+  const rows = (maxQRow + 1) * 2;
 
   // Calculate tile size to fit within the available grid area
   // Grid area: ~540px wide x ~280px tall (with padding)
@@ -43,11 +61,59 @@ function getGridLayout(totalSlots: number): { columns: number; rows: number; til
   const maxGridHeight = 280;
   const gap = 8;
 
-  const maxTileWidth = (maxGridWidth - gap * (layout.columns - 1)) / layout.columns;
-  const maxTileHeight = (maxGridHeight - gap * (layout.rows - 1)) / layout.rows;
+  const maxTileWidth = (maxGridWidth - gap * (columns - 1)) / columns;
+  const maxTileHeight = (maxGridHeight - gap * (rows - 1)) / rows;
   const tileSize = Math.min(72, Math.floor(Math.min(maxTileWidth, maxTileHeight)));
 
-  return { ...layout, tileSize };
+  return { columns, rows, tileSize };
+}
+
+/**
+ * Build a 2D grid of cells from slot data using quadrant fill order.
+ * Returns a flat array of JSX elements (row-major) including empty placeholders.
+ */
+function buildGridCells(
+  slots: SlotData[],
+  totalSlots: number,
+  columns: number,
+  rows: number,
+  tileSize: number,
+): React.JSX.Element[] {
+  const slotMap = new Map<number, SlotData>();
+  for (const slot of slots) {
+    slotMap.set(slot.slotNumber, slot);
+  }
+
+  // Build set of valid slot positions for quick lookup
+  const slotPositions = new Map<string, number>();
+  for (let s = 1; s <= totalSlots; s++) {
+    const pos = slotToGridPosition(s);
+    slotPositions.set(`${pos.row},${pos.col}`, s);
+  }
+
+  const cells: React.JSX.Element[] = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < columns; col++) {
+      const slotNum = slotPositions.get(`${row},${col}`);
+      if (slotNum !== undefined) {
+        const slot = slotMap.get(slotNum) ?? {
+          slotNumber: slotNum,
+          state: "empty" as const,
+          percentComplete: 0,
+        };
+        cells.push(<FarmSlot key={`slot-${slotNum}`} slot={slot} tileSize={tileSize} />);
+      } else {
+        // Empty grid cell (no slot here)
+        cells.push(
+          <div
+            key={`empty-${row}-${col}`}
+            style={{ display: "flex", width: tileSize, height: tileSize }}
+          />,
+        );
+      }
+    }
+  }
+  return cells;
 }
 
 /**
@@ -93,7 +159,7 @@ function FarmSlot({
         overflow: "hidden",
       }}
     >
-      {/* Background fill for growing crops — replaces bottom progress bar */}
+      {/* Background fill for growing crops */}
       {slot.state === "growing" && (
         <div
           style={{
@@ -146,20 +212,16 @@ function FarmSlot({
 
 /**
  * Calculate pixel position for a sprinkler overlay.
- * Positioned at the center intersection of the 4 tiles it covers.
- * chunkCols = floor(gridColumns / 2) determines how positions wrap.
+ * Position N covers the Nth quadrant in fill order.
  */
 function getSprinklerPixelPosition(
   position: number,
   tileSize: number,
   gap: number,
-  gridColumns: number
 ): { x: number; y: number } {
-  const chunkCols = Math.floor(gridColumns / 2);
-  const chunkRow = Math.floor((position - 1) / chunkCols);
-  const chunkCol = (position - 1) % chunkCols;
-  const x = chunkCol * 2 * (tileSize + gap) + tileSize + gap / 2;
-  const y = chunkRow * 2 * (tileSize + gap) + tileSize + gap / 2;
+  const [qRow, qCol] = QUADRANT_FILL_ORDER[position - 1] ?? [0, 0];
+  const x = qCol * 2 * (tileSize + gap) + tileSize + gap / 2;
+  const y = qRow * 2 * (tileSize + gap) + tileSize + gap / 2;
   return { x, y };
 }
 
@@ -181,6 +243,8 @@ export function FarmCard({ data }: { data: FarmData }) {
   const headerLabel = data.totalPlots > 1
     ? `Plot ${plotData.plotNumber}`
     : `${data.username}'s Farm`;
+
+  const gridCells = buildGridCells(plotData.slots, plotData.totalSlots, columns, rows, tileSize);
 
   return (
     <div
@@ -301,14 +365,12 @@ export function FarmCard({ data }: { data: FarmData }) {
                 gap,
               }}
             >
-              {plotData.slots.map((slot) => (
-                <FarmSlot key={slot.slotNumber} slot={slot} tileSize={tileSize} />
-              ))}
+              {gridCells}
             </div>
-            {/* Sprinkler overlays — only on 6-column grids */}
+            {/* Sprinkler overlays */}
             {hasSprinklers &&
               sprinklerPositions.map((pos) => {
-                const { x, y } = getSprinklerPixelPosition(pos, tileSize, gap, columns);
+                const { x, y } = getSprinklerPixelPosition(pos, tileSize, gap);
                 const size = 22;
                 return (
                   <div
@@ -331,7 +393,8 @@ export function FarmCard({ data }: { data: FarmData }) {
                     💦
                   </div>
                 );
-              })}</div>
+              })}
+          </div>
         </div>
 
         {/* Legend */}
@@ -411,15 +474,64 @@ export function FarmCard({ data }: { data: FarmData }) {
  * Mini plot card for birds-eye view — small colored squares, no emojis
  */
 function MiniPlotCard({ plot }: { plot: PlotData }) {
-  // Calculate grid for mini plot
-  const cols = Math.ceil(Math.sqrt(plot.totalSlots));
-  const rows = Math.ceil(plot.totalSlots / cols);
+  const layout = getGridLayout(plot.totalSlots);
+  const cols = layout.columns;
+  const rows = layout.rows;
   const squareSize = Math.min(12, Math.floor(90 / Math.max(cols, rows)));
   const miniGap = 2;
 
   // Max height for a full 36-slot grid (6 rows)
   const maxRows = 6;
   const maxGridHeight = maxRows * squareSize + (maxRows - 1) * miniGap;
+
+  // Build slot lookup
+  const slotMap = new Map<number, SlotData>();
+  for (const slot of plot.slots) {
+    slotMap.set(slot.slotNumber, slot);
+  }
+
+  // Build set of valid slot positions
+  const slotPositions = new Map<string, number>();
+  for (let s = 1; s <= plot.totalSlots; s++) {
+    const pos = slotToGridPosition(s);
+    slotPositions.set(`${pos.row},${pos.col}`, s);
+  }
+
+  const miniCells: React.JSX.Element[] = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const slotNum = slotPositions.get(`${row},${col}`);
+      if (slotNum !== undefined) {
+        const slot = slotMap.get(slotNum);
+        miniCells.push(
+          <div
+            key={`mini-${row}-${col}`}
+            style={{
+              display: "flex",
+              width: squareSize,
+              height: squareSize,
+              backgroundColor: slot ? getSlotColor(slot.state) : "#4a3c2a",
+              borderRadius: 2,
+            }}
+          />,
+        );
+      } else {
+        // Empty grid cell (no slot mapped here)
+        miniCells.push(
+          <div
+            key={`mini-empty-${row}-${col}`}
+            style={{
+              display: "flex",
+              width: squareSize,
+              height: squareSize,
+              backgroundColor: "transparent",
+              borderRadius: 2,
+            }}
+          />,
+        );
+      }
+    }
+  }
 
   return (
     <div
@@ -428,14 +540,13 @@ function MiniPlotCard({ plot }: { plot: PlotData }) {
         flexDirection: "column",
         alignItems: "center",
         width: 105,
-        height: 8 + 11 + 6 + maxGridHeight + 4 + 9 + 8, // padding + label + gap + grid + gap + count + padding
+        height: 8 + 11 + 6 + maxGridHeight + 4 + 9 + 8,
         backgroundColor: "rgba(0, 0, 0, 0.2)",
         borderRadius: 8,
         border: "1px solid rgba(255, 255, 255, 0.12)",
         padding: "8px 6px",
       }}
     >
-      {/* Plot label */}
       <span
         style={{
           fontSize: 11,
@@ -447,7 +558,6 @@ function MiniPlotCard({ plot }: { plot: PlotData }) {
         Plot {plot.plotNumber}
       </span>
 
-      {/* Mini grid */}
       <div
         style={{
           display: "flex",
@@ -456,34 +566,9 @@ function MiniPlotCard({ plot }: { plot: PlotData }) {
           gap: miniGap,
         }}
       >
-        {plot.slots.map((slot, i) => (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              width: squareSize,
-              height: squareSize,
-              backgroundColor: getSlotColor(slot.state),
-              borderRadius: 2,
-            }}
-          />
-        ))}
-        {/* Fill empty slot placeholders up to totalSlots */}
-        {Array.from({ length: plot.totalSlots - plot.slots.length }).map((_, i) => (
-          <div
-            key={`empty-${i}`}
-            style={{
-              display: "flex",
-              width: squareSize,
-              height: squareSize,
-              backgroundColor: "#4a3c2a",
-              borderRadius: 2,
-            }}
-          />
-        ))}
+        {miniCells}
       </div>
 
-      {/* Slot count — pinned to bottom */}
       <span
         style={{
           fontSize: 9,
@@ -499,7 +584,6 @@ function MiniPlotCard({ plot }: { plot: PlotData }) {
 
 export function BirdsEyeCard({ data }: { data: BirdsEyeData }) {
   const plotCount = data.plots.length;
-  // 1-5 plots: single row, 6-10: 2 rows of 5
   const topRow = data.plots.slice(0, 5);
   const bottomRow = plotCount > 5 ? data.plots.slice(5) : null;
 
@@ -517,7 +601,6 @@ export function BirdsEyeCard({ data }: { data: BirdsEyeData }) {
         backgroundImage: "linear-gradient(135deg, #2d5016, #1a3309)",
       }}
     >
-      {/* Overlay */}
       <div
         style={{
           display: "flex",
@@ -529,7 +612,6 @@ export function BirdsEyeCard({ data }: { data: BirdsEyeData }) {
           backgroundColor: "rgba(0, 0, 0, 0.1)",
         }}
       />
-      {/* Border */}
       <div
         style={{
           display: "flex",
@@ -543,7 +625,6 @@ export function BirdsEyeCard({ data }: { data: BirdsEyeData }) {
         }}
       />
 
-      {/* Content */}
       <div
         style={{
           display: "flex",
@@ -553,7 +634,6 @@ export function BirdsEyeCard({ data }: { data: BirdsEyeData }) {
           flex: 1,
         }}
       >
-        {/* Header */}
         <div
           style={{
             display: "flex",
@@ -568,7 +648,6 @@ export function BirdsEyeCard({ data }: { data: BirdsEyeData }) {
           </span>
         </div>
 
-        {/* Plot grid */}
         <div
           style={{
             display: "flex",
@@ -579,14 +658,11 @@ export function BirdsEyeCard({ data }: { data: BirdsEyeData }) {
             gap: 10,
           }}
         >
-          {/* Top row */}
           <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
             {topRow.map((plot) => (
               <MiniPlotCard key={plot.plotNumber} plot={plot} />
             ))}
           </div>
-
-          {/* Bottom row */}
           {bottomRow && (
             <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
               {bottomRow.map((plot) => (
@@ -596,7 +672,6 @@ export function BirdsEyeCard({ data }: { data: BirdsEyeData }) {
           )}
         </div>
 
-        {/* Legend */}
         <div
           style={{
             display: "flex",
